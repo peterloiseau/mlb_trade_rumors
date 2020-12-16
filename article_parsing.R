@@ -89,10 +89,10 @@ articles_token_record<-articles_header_token%>%left_join(Teams%>%select(yearID,n
 
 winning<-articles_token_record%>%filter(word%!in%c('cashman','dombrowski','nats','dave','aroldis','gerrit','george','yu','kubatko','phils','victor','bucs','billy','halos','masnsports','dan','south')&word%!in%(articles_token_record%>%select(team)%>%distinct()%>%mutate(team=tolower(team))%>%unnest_tokens(bits,team))$bits&word%!in%tolower(mention_player_team$Word))%>%group_by(word)%>%summarise(n=n(),win=mean(W)/(mean(W)+mean(L)))%>%filter(n>1000&(win>.526))
 names(winning)<-c('Word','Mentions','Winning Percentage')
-write.csv(winning%>%arrange(desc(`Winning Percentage`)),'winning_words.csv',row.names = F)
+write.csv(winning%>%arrange(desc(`Winning Percentage`))%>%mutate(`Winning Percentage`=paste0(round(`Winning Percentage`,3)*100,'%')),'winning_words.csv',row.names = F)
 losing<-articles_token_record%>%filter(word%!in%c('cashman','dombrowski','nats','dave','aroldis','gerrit','george','yu','kubatko','phils','victor','bucs','billy','halos','masnsports','dan','south')&word%!in%(articles_token_record%>%select(team)%>%distinct()%>%mutate(team=tolower(team))%>%unnest_tokens(bits,team))$bits&word%!in%tolower(mention_player_team$Word))%>%group_by(word)%>%summarise(n=n(),win=mean(W)/(mean(W)+mean(L)))%>%filter(n>1000&(win<.491))
 names(losing)<-c('Word','Mentions','Winning Percentage')
-write.csv(losing%>%arrange(`Winning Percentage`),'losing_words.csv',row.names = F)
+write.csv(losing%>%arrange(`Winning Percentage`)%>%mutate(`Winning Percentage`=paste0(round(`Winning Percentage`,3)*100,'%')),'losing_words.csv',row.names = F)
 
 #############
 team_vocab<-articles_header_token%>%filter(word%!in%c('cashman','dombrowski','nats','dave','aroldis','gerrit','george','yu','manny','dipoto','boone','kubatko','phils','victor','bucs','billy','halos','masnsports','dan','south','van','wagenen','zaidi','luhnow','slusser','la','russa','preller','mookie','matt','maddon','kapler','justin','jeter','jeff','john','grant','giancarlo','epstein','duquette','cherington','callaway','bryce','bloom','andrew','aaron','adams','alderson','baker','zach')&word%!in%(articles_token_record%>%select(team)%>%distinct()%>%mutate(team=tolower(team))%>%unnest_tokens(bits,team))$bits&word%!in%tolower(mention_player_team$Word))%>%group_by(team,year,inseason,word)%>%summarise(n=n())%>%group_by(word)%>%filter(max(n)>120)%>%spread(word,n)
@@ -180,11 +180,11 @@ signing_model<-glm(sign.y~.,rumors_wsign_vocab_join%>%filter(year!=2019)%>%selec
 summary(signing_model)
 #higher percentage of rumors to a team is a good sign, if it is the most talked about team same goes. Good words: sign, sports, comments. Bad words: owner, pick, teams,pick, dh, agency
 rumors_wsign_vocab_pred<-rumors_wsign_vocab_join%>%filter(year==2019)%>%cbind.data.frame(predict=predict.glm(signing_model,rumors_wsign_vocab_join%>%filter(year==2019)%>%select(-c(team.x,team.y,player1,year)),type='response'))
-rumors_wsign_vocab_pred<-rumors_wsign_vocab_pred%>%group_by(player1)%>%mutate(pred=ifelse(predict==max(predict),1,0),fpred=ifelse((sum(pred)>1&unique(team.x)[1]==team.x),1,ifelse(sum(pred)==1,pred,0)))%>%filter(max(sign.y)==1)
+rumors_wsign_vocab_pred<-rumors_wsign_vocab_pred%>%group_by(player1)%>%mutate(pred=ifelse(predict==max(predict),1,0),fpred=ifelse((sum(pred)>1&unique(team.x)[1]==team.x),1,ifelse((sum(pred)>1&unique(team.x)[1]!=team.x),0,'pass')))%>%ungroup()%>%mutate(ffpred=ifelse(fpred=='pass',pred,fpred))%>%filter(max(sign.y)==1)
 rumors_wsign_vocab_pred$sign.y<-as.factor(rumors_wsign_vocab_pred$sign.y)
-rumors_wsign_vocab_pred$fpred<-as.factor(rumors_wsign_vocab_pred$fpred)
-confusionMatrix(rumors_wsign_vocab_pred$sign.y,rumors_wsign_vocab_pred$fpred)
-#basic model gives 97% accuracy, 90% specificity, 63% sensitivity.
+rumors_wsign_vocab_pred$ffpred<-as.factor(rumors_wsign_vocab_pred$ffpred)
+confusionMatrix(rumors_wsign_vocab_pred$ffpred,rumors_wsign_vocab_pred$sign.y)
+#basic model gives 86% accuracy, 89% specificity, 66% sensitivity. Mean connectedness is 9.17, so naive accuracy is 89% 
 #predict this offseason
 rumors_wsign<-articles_player_team_un%>%filter(year==2020)%>%left_join(offseason_sign%>%select(-c(trans,inseason)),by=c('year','player'))%>%filter(date.x<date.y|is.na(date.y))
 rumors_wsign_sum<-rumors_wsign%>%group_by(year,player,team.y,team.x)%>%summarise(n=n())%>%group_by(year,player,team.y)%>%mutate(perc=n/sum(n),max=ifelse(n==max(n),1,0),sign=ifelse(team.x==team.y,1,0))
